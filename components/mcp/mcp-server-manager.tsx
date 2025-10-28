@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { MCPServerConfig } from "@/lib/types";
+import { MCPServerConfig, MCPTransport } from "@/lib/types";
 import {
   getMCPServers,
   saveMCPServer,
@@ -126,14 +126,20 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
   
   // 새 서버 추가 폼
   const [newServerName, setNewServerName] = useState("");
+  const [newTransport, setNewTransport] = useState<MCPTransport>("stdio");
   const [newServerCommand, setNewServerCommand] = useState("uvx");
   const [newServerArgs, setNewServerArgs] = useState("");
+  const [newServerUrl, setNewServerUrl] = useState("");
+  const [newServerToken, setNewServerToken] = useState("");
   
   // 서버 편집 상태
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
   const [editServerName, setEditServerName] = useState("");
+  const [editTransport, setEditTransport] = useState<MCPTransport>("stdio");
   const [editServerCommand, setEditServerCommand] = useState("");
   const [editServerArgs, setEditServerArgs] = useState("");
+  const [editServerUrl, setEditServerUrl] = useState("");
+  const [editServerToken, setEditServerToken] = useState("");
   
   // 연결 에러 상태
   const [connectionErrors, setConnectionErrors] = useState<Map<string, { details: string; stderr?: string; suggestion?: string }>>(new Map());
@@ -186,27 +192,52 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
   };
 
   const handleAddServer = async () => {
-    if (!newServerName.trim() || !newServerCommand.trim()) {
-      alert("서버 이름과 명령을 입력하세요.");
+    if (!newServerName.trim()) {
+      alert("서버 이름을 입력하세요.");
       return;
     }
 
-    const newServer: MCPServerConfig = {
-      id: `mcp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      name: newServerName.trim(),
-      command: newServerCommand.trim(),
-      args: newServerArgs.trim().split(" ").filter((a) => a),
-      enabled: false,
-      createdAt: Date.now(),
-    };
+    let newServer: MCPServerConfig;
+    if (newTransport === "stdio") {
+      if (!newServerCommand.trim()) {
+        alert("명령(예: uvx)을 입력하세요.");
+        return;
+      }
+      newServer = {
+        id: `mcp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name: newServerName.trim(),
+        transport: "stdio",
+        command: newServerCommand.trim(),
+        args: newServerArgs.trim().split(" ").filter((a) => a),
+        enabled: false,
+        createdAt: Date.now(),
+      } as MCPServerConfig;
+    } else {
+      if (!newServerUrl.trim()) {
+        alert("원격 MCP 서버 URL을 입력하세요.");
+        return;
+      }
+      newServer = {
+        id: `mcp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        name: newServerName.trim(),
+        transport: "sse",
+        url: newServerUrl.trim(),
+        token: newServerToken.trim() || undefined,
+        enabled: false,
+        createdAt: Date.now(),
+      } as MCPServerConfig;
+    }
 
     saveMCPServer(newServer);
     loadServers();
     
     // 폼 초기화
     setNewServerName("");
+    setNewTransport("stdio");
     setNewServerCommand("uvx");
     setNewServerArgs("");
+    setNewServerUrl("");
+    setNewServerToken("");
     setIsAddingServer(false);
     
     onServersChange?.();
@@ -216,11 +247,12 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
     const newServer: MCPServerConfig = {
       id: `mcp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       name: preset.name,
+      transport: "stdio",
       command: preset.command,
       args: preset.args.split(" ").filter((a) => a),
       enabled: false,
       createdAt: Date.now(),
-    };
+    } as MCPServerConfig;
 
     saveMCPServer(newServer);
     loadServers();
@@ -232,32 +264,66 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
   const handleStartEdit = (server: MCPServerConfig) => {
     setEditingServerId(server.id);
     setEditServerName(server.name);
-    setEditServerCommand(server.command);
-    setEditServerArgs(server.args.join(" "));
+    const transport = (server as any).transport ? (server as any).transport : ("command" in (server as any) ? "stdio" : "sse");
+    setEditTransport(transport as MCPTransport);
+    if (transport === "stdio") {
+      setEditServerCommand((server as any).command || "");
+      setEditServerArgs(((server as any).args || []).join(" "));
+      setEditServerUrl("");
+      setEditServerToken("");
+    } else {
+      setEditServerUrl((server as any).url || "");
+      setEditServerToken((server as any).token || "");
+      setEditServerCommand("");
+      setEditServerArgs("");
+    }
   };
 
   const handleCancelEdit = () => {
     setEditingServerId(null);
     setEditServerName("");
+    setEditTransport("stdio");
     setEditServerCommand("");
     setEditServerArgs("");
+    setEditServerUrl("");
+    setEditServerToken("");
   };
 
   const handleSaveEdit = async () => {
-    if (!editingServerId || !editServerName.trim() || !editServerCommand.trim()) {
-      alert("서버 이름과 명령을 입력하세요.");
+    if (!editingServerId || !editServerName.trim()) {
+      alert("서버 이름을 입력하세요.");
       return;
     }
 
     const server = servers.find((s) => s.id === editingServerId);
     if (!server) return;
 
-    const updatedServer: MCPServerConfig = {
-      ...server,
-      name: editServerName.trim(),
-      command: editServerCommand.trim(),
-      args: editServerArgs.trim().split(" ").filter((a) => a),
-    };
+    let updatedServer: MCPServerConfig;
+    if (editTransport === "stdio") {
+      if (!editServerCommand.trim()) {
+        alert("명령을 입력하세요.");
+        return;
+      }
+      updatedServer = {
+        ...server,
+        name: editServerName.trim(),
+        transport: "stdio",
+        command: editServerCommand.trim(),
+        args: editServerArgs.trim().split(" ").filter((a) => a),
+      } as MCPServerConfig;
+    } else {
+      if (!editServerUrl.trim()) {
+        alert("URL을 입력하세요.");
+        return;
+      }
+      updatedServer = {
+        ...server,
+        name: editServerName.trim(),
+        transport: "sse",
+        url: editServerUrl.trim(),
+        token: editServerToken.trim() || undefined,
+      } as MCPServerConfig;
+    }
 
     // 서버가 활성화된 상태면 재연결
     if (server.enabled && globalEnabled) {
@@ -505,23 +571,55 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
                 onChange={(e) => setNewServerName(e.target.value)}
               />
             </div>
-            <div>
-              <Input
-                placeholder="명령 (예: uvx)"
-                value={newServerCommand}
-                onChange={(e) => setNewServerCommand(e.target.value)}
-              />
+            <div className="flex gap-2">
+              <select
+                className="border rounded px-2 py-1 text-sm"
+                value={newTransport}
+                onChange={(e) => setNewTransport(e.target.value as MCPTransport)}
+              >
+                <option value="stdio">로컬(uvx)</option>
+                <option value="sse">원격(HTTP/SSE)</option>
+              </select>
             </div>
-            <div>
-              <Input
-                placeholder="인자 (예: @modelcontextprotocol/server-time)"
-                value={newServerArgs}
-                onChange={(e) => setNewServerArgs(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                💡 팁: 공백으로 구분하여 입력하세요
-              </p>
-            </div>
+            {newTransport === "stdio" ? (
+              <>
+                <div>
+                  <Input
+                    placeholder="명령 (예: uvx)"
+                    value={newServerCommand}
+                    onChange={(e) => setNewServerCommand(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Input
+                    placeholder="인자 (예: @modelcontextprotocol/server-time)"
+                    value={newServerArgs}
+                    onChange={(e) => setNewServerArgs(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    💡 팁: 공백으로 구분하여 입력하세요
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <Input
+                    placeholder="URL (https://...)"
+                    value={newServerUrl}
+                    onChange={(e) => setNewServerUrl(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Input
+                    placeholder="인증 토큰 (선택)"
+                    value={newServerToken}
+                    onChange={(e) => setNewServerToken(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">공용 PC에 토큰 저장은 피하세요.</p>
+                </div>
+              </>
+            )}
             <div className="flex gap-2">
               <Button onClick={handleAddServer} size="sm" className="flex-1">
                 추가
@@ -555,16 +653,44 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
                       value={editServerName}
                       onChange={(e) => setEditServerName(e.target.value)}
                     />
-                    <Input
-                      placeholder="명령"
-                      value={editServerCommand}
-                      onChange={(e) => setEditServerCommand(e.target.value)}
-                    />
-                    <Input
-                      placeholder="인자 (공백으로 구분)"
-                      value={editServerArgs}
-                      onChange={(e) => setEditServerArgs(e.target.value)}
-                    />
+                    <div className="flex gap-2">
+                      <select
+                        className="border rounded px-2 py-1 text-sm"
+                        value={editTransport}
+                        onChange={(e) => setEditTransport(e.target.value as MCPTransport)}
+                      >
+                        <option value="stdio">로컬(uvx)</option>
+                        <option value="sse">원격(HTTP/SSE)</option>
+                      </select>
+                    </div>
+                    {editTransport === "stdio" ? (
+                      <>
+                        <Input
+                          placeholder="명령 (예: uvx)"
+                          value={editServerCommand}
+                          onChange={(e) => setEditServerCommand(e.target.value)}
+                        />
+                        <Input
+                          placeholder="인자 (공백으로 구분)"
+                          value={editServerArgs}
+                          onChange={(e) => setEditServerArgs(e.target.value)}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <Input
+                          placeholder="URL (https://...)"
+                          value={editServerUrl}
+                          onChange={(e) => setEditServerUrl(e.target.value)}
+                        />
+                        <Input
+                          placeholder="인증 토큰 (선택)"
+                          value={editServerToken}
+                          onChange={(e) => setEditServerToken(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">공용 PC에 토큰 저장은 피하세요.</p>
+                      </>
+                    )}
                     <div className="flex gap-2">
                       <Button
                         size="sm"
@@ -599,7 +725,9 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">
-                          {server.command} {server.args.join(" ")}
+                          {((server as any).transport ? (server as any).transport : ("command" in (server as any) ? "stdio" : "sse")) === "stdio"
+                            ? `${(server as any).command} ${((server as any).args || []).join(" ")}`
+                            : `${(server as any).url}`}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">

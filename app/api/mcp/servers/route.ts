@@ -32,21 +32,41 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const config: MCPServerConfig = await request.json();
+    const config = (await request.json()) as MCPServerConfig;
 
-    if (!config.id || !config.name || !config.command) {
+    // 공통 필수값
+    if (!config.id || !config.name) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
       );
     }
 
-    // 인자 배열 검증
-    if (!Array.isArray(config.args)) {
-      return NextResponse.json(
-        { error: "Invalid args format - must be an array" },
-        { status: 400 }
-      );
+    // 방식별 유효성 검사 (레거시 저장 데이터 호환)
+    const transport = (config as any).transport
+      ? (config as any).transport
+      : ("command" in (config as any) ? "stdio" : "sse");
+
+    if (transport === "stdio") {
+      if (!(config as any).command) {
+        return NextResponse.json(
+          { error: "Missing command for stdio transport" },
+          { status: 400 }
+        );
+      }
+      if (!Array.isArray((config as any).args)) {
+        return NextResponse.json(
+          { error: "Invalid args format - must be an array" },
+          { status: 400 }
+        );
+      }
+    } else {
+      if (!(config as any).url) {
+        return NextResponse.json(
+          { error: "Missing url for sse transport" },
+          { status: 400 }
+        );
+      }
     }
 
     // 연결 시도
@@ -57,9 +77,8 @@ export async function POST(request: NextRequest) {
       server: {
         id: clientInfo.id,
         name: clientInfo.config.name,
-        command: clientInfo.config.command,
-        args: clientInfo.config.args,
         connected: clientInfo.connected,
+        config: clientInfo.config,
       },
     });
   } catch (error) {

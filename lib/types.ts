@@ -23,12 +23,19 @@ export interface ChatSession {
   updatedAt: number;
 }
 
-export interface MCPServerConfig {
-  id: string;
-  name: string;
-  command: string;
-  args: string[];
-  enabled: boolean;
-  createdAt: number;
-}
+export type MCPTransport = "stdio" | "sse";
+
+// 유니온 타입: stdio(uvx) 또는 sse(HTTP/SSE)
+export type MCPServerConfig = (
+  {
+    id: string;
+    name: string;
+    enabled: boolean;
+    createdAt: number;
+    transport: MCPTransport;
+  } & (
+    | { transport: "stdio"; command: string; args: string[] }
+    | { transport: "sse"; url: string; token?: string }
+  )
+);
 

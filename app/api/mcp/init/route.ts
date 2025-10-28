@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { connectServer } from "@/lib/mcp/manager";
+import { MCPServerConfig } from "@/lib/types";
 
 /**
  * POST: 저장된 MCP 서버 목록을 자동으로 연결
  */
 export async function POST(request: Request) {
   try {
-    const { servers } = await request.json();
+    const { servers } = (await request.json()) as { servers: MCPServerConfig[] };
 
     if (!Array.isArray(servers)) {
       return NextResponse.json(
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
     const results = [];
     const errors = [];
 
-    for (const server of servers) {
+    for (const server of servers as MCPServerConfig[]) {
       if (server.enabled) {
         try {
           const clientInfo = await connectServer(server);

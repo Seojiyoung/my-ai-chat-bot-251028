@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { MCPClientInfo, MCPManagerState, MCPConnectionError } from "./types";
 import { MCPServerConfig } from "../types";
 
@@ -67,27 +68,43 @@ export async function connectServer(
         }
       );
 
-      // stderr 캡처를 위한 배열
+      // stderr 캡처를 위한 배열 (stdio일 때만 의미 있음)
       const stderrLines: string[] = [];
 
-      // Transport 생성
-      const transport = new StdioClientTransport({
-        command: config.command,
-        args: config.args,
-        stderr: "pipe", // stderr 파이핑 활성화
-      });
+      // 레거시 호환: transport가 누락된 경우 유추
+      const transportMode = (config as any).transport
+        ? (config as any).transport
+        : ("command" in (config as any) ? "stdio" : "sse");
 
-      // stderr 리스너 등록 (transport에 process가 있는 경우)
-      // 타입 정의에 없지만 런타임에 존재할 수 있는 속성이므로 타입 단언 사용
-      const transportWithProcess = transport as unknown as {
-        process?: { stderr?: { on: (event: string, handler: (data: Buffer) => void) => void } };
-      };
-      if (transportWithProcess.process?.stderr) {
-        transportWithProcess.process.stderr.on("data", (data: Buffer) => {
-          const text = data.toString();
-          stderrLines.push(text);
-          console.error(`[MCP ${config.name} stderr]:`, text);
-        });
+      // Transport 생성
+      const transport =
+        transportMode === "sse"
+          ? new SSEClientTransport(
+              new URL((config as any).url),
+              ({
+                headers: (config as any).token
+                  ? { Authorization: `Bearer ${(config as any).token}` }
+                  : undefined,
+              } as unknown as any)
+            )
+          : new StdioClientTransport({
+              command: (config as any).command,
+              args: (config as any).args,
+              stderr: "pipe", // stderr 파이핑 활성화
+            });
+
+      // stdio일 때만 stderr 리스너 등록
+      if (transportMode === "stdio") {
+        const transportWithProcess = transport as unknown as {
+          process?: { stderr?: { on: (event: string, handler: (data: Buffer) => void) => void } };
+        };
+        if (transportWithProcess.process?.stderr) {
+          transportWithProcess.process.stderr.on("data", (data: Buffer) => {
+            const text = data.toString();
+            stderrLines.push(text);
+            console.error(`[MCP ${config.name} stderr]:`, text);
+          });
+        }
       }
 
       // 타임아웃을 적용한 연결 (30초)
@@ -112,11 +129,7 @@ export async function connectServer(
         client,
         transport,
         connected: true,
-        config: {
-          name: config.name,
-          command: config.command,
-          args: config.args,
-        },
+        config: config as any,
       };
 
       manager.clients.set(config.id, clientInfo);
@@ -161,7 +174,7 @@ function getSuggestionForError(
   config?: MCPServerConfig
 ): string {
   if (!errorMessage) {
-    return "명령어와 인자를 확인하고 다시 시도하세요.";
+    return "설정을 확인하고 다시 시도하세요.";
   }
 
   if (errorMessage.includes("timeout")) {
@@ -169,7 +182,8 @@ function getSuggestionForError(
   }
 
   if (errorMessage.includes("ENOENT") || errorMessage.includes("not found")) {
-    return `명령어 '${config?.command}'를 찾을 수 없습니다. 설치 여부를 확인하세요.`;
+    // stdio 모드 안내
+    return "명령어를 찾을 수 없습니다. 로컬 환경에서만 stdio(uvx) 사용 가능하며, 배포 환경에서는 sse(HTTP) 방식을 사용하세요.";
   }
 
   if (errorMessage.includes("Connection closed")) {
@@ -180,7 +194,15 @@ function getSuggestionForError(
     return "패키지 이름이 올바르지 않습니다. 형식을 확인하세요 (예: mcp-server-time 또는 @modelcontextprotocol/server-time).";
   }
 
-  return "명령어와 인자를 확인하고 다시 시도하세요.";
+  if (errorMessage.includes("401") || errorMessage.includes("403")) {
+    return "인증에 실패했습니다. 토큰을 확인하거나 권한을 점검하세요.";
+  }
+
+  if (errorMessage.includes("404")) {
+    return "원격 MCP 서버 URL이 올바른지 확인하세요.";
+  }
+
+  return "설정을 확인하고 다시 시도하세요.";
 }
 
 /**
