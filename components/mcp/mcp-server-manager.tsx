@@ -142,7 +142,7 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
   const [editServerToken, setEditServerToken] = useState("");
   
   // 연결 에러 상태
-  const [connectionErrors, setConnectionErrors] = useState<Map<string, { details: string; stderr?: string; suggestion?: string }>>(new Map());
+  const [connectionErrors, setConnectionErrors] = useState<Map<string, { details: string; stderr?: string; suggestion?: string; preflight?: string; targetUrl?: string }>>(new Map());
   
   // 연결 중 상태
   const [connectingServers, setConnectingServers] = useState<Set<string>>(new Set());
@@ -347,6 +347,8 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
             details: errorData.details || "연결 실패",
             stderr: errorData.stderr,
             suggestion: errorData.suggestion,
+            preflight: errorData.preflight,
+            targetUrl: errorData.targetUrl,
           });
           setConnectionErrors(errors);
         } else {
@@ -403,6 +405,8 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
             details: errorData.details || "연결 실패",
             stderr: errorData.stderr,
             suggestion: errorData.suggestion,
+            preflight: errorData.preflight,
+            targetUrl: errorData.targetUrl,
           });
           setConnectionErrors(errors);
           // 연결 실패 시 다시 비활성화
@@ -798,6 +802,21 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
                         <p className="mt-1 text-red-700 dark:text-red-300">
                           {connectionErrors.get(server.id)?.details}
                         </p>
+                        {connectionErrors.get(server.id)?.targetUrl && (
+                          <p className="mt-1 text-red-700 dark:text-red-300">
+                            시도 URL: <span className="font-mono break-all">{connectionErrors.get(server.id)?.targetUrl}</span>
+                          </p>
+                        )}
+                        {connectionErrors.get(server.id)?.preflight && (
+                          <details className="mt-2">
+                            <summary className="cursor-pointer text-red-600 dark:text-red-400 hover:underline">
+                              프리플라이트 로그 보기
+                            </summary>
+                            <pre className="mt-1 p-2 bg-red-100 dark:bg-red-900/30 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all">
+                              {connectionErrors.get(server.id)?.preflight}
+                            </pre>
+                          </details>
+                        )}
                         {connectionErrors.get(server.id)?.stderr && (
                           <details className="mt-2">
                             <summary className="cursor-pointer text-red-600 dark:text-red-400 hover:underline">

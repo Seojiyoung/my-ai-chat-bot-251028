@@ -72,6 +72,9 @@ export async function GET() {
  * POST: MCP 서버 추가 및 연결
  */
 export async function POST(request: NextRequest) {
+  // 프리플라이트/시도 URL을 에러 응답에 포함하기 위한 외부 변수
+  let preflightNotesLocal: string[] | undefined;
+  let targetSseUrl: string | undefined;
   try {
     const raw = (await request.json()) as unknown;
 
@@ -171,6 +174,8 @@ export async function POST(request: NextRequest) {
 
       // 프리플라이트에 실패해도 마지막 후보로 연결을 시도한다
       const sseUrl = chosen ?? candidates[candidates.length - 1];
+      preflightNotesLocal = preflightNotes;
+      targetSseUrl = sseUrl;
 
       config = {
         id: base.id,
@@ -207,9 +212,7 @@ export async function POST(request: NextRequest) {
       details?: { message?: string; stderr?: string; suggestion?: string };
     };
     // 프리플라이트 노트가 있으면 포함
-    const maybeNotes = (error as unknown as { config?: { __preflightNotes?: string[] } })?.config?.__preflightNotes
-      || (error as unknown as { __preflightNotes?: string[] }).__preflightNotes
-      || [];
+    const maybeNotes = preflightNotesLocal || [];
     
     return NextResponse.json(
       {
@@ -218,6 +221,7 @@ export async function POST(request: NextRequest) {
         stderr: errorWithDetails.details?.stderr,
         suggestion: errorWithDetails.details?.suggestion,
         preflight: Array.isArray(maybeNotes) ? maybeNotes.join(" | ") : undefined,
+        targetUrl: targetSseUrl,
       },
       { status: 500 }
     );
