@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Message, ChatSession } from "@/lib/types";
+import { Message, ChatSession, FunctionCall } from "@/lib/types";
 import {
   getSessions,
   saveSession,
   deleteSession,
   createSession,
   getSession,
+  getMCPGlobalEnabled,
+  setMCPGlobalEnabled,
+  getMCPServers,
 } from "@/lib/storage";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { ChatInput } from "@/components/chat/chat-input";
@@ -27,18 +30,30 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import { MarkdownContent } from "@/components/chat/markdown-content";
-import { Bot, Loader2, RotateCcw } from "lucide-react";
+import { MCPServerManager } from "@/components/mcp/mcp-server-manager";
+import { Bot, Loader2, RotateCcw, Settings } from "lucide-react";
 
 export default function Home() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [streamingMessage, setStreamingMessage] = useState<string>("");
+  const [streamingFunctionCalls, setStreamingFunctionCalls] = useState<FunctionCall[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
+  const [mcpGlobalEnabled, setMcpGlobalEnabledState] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  // 초기 로드: 세션 불러오기
+  // 초기 로드: 세션 불러오기 및 MCP 서버 초기화
   useEffect(() => {
     const loadedSessions = getSessions();
     setSessions(loadedSessions);
@@ -52,7 +67,46 @@ export default function Home() {
       // 없으면 새 세션 생성
       handleNewChat();
     }
+
+    // MCP 전역 활성화 상태 로드
+    const globalEnabled = getMCPGlobalEnabled();
+    setMcpGlobalEnabledState(globalEnabled);
+
+    // MCP 서버 초기화
+    initializeMCPServers();
   }, []);
+
+  // MCP 서버 자동 연결
+  const initializeMCPServers = async () => {
+    const globalEnabled = getMCPGlobalEnabled();
+    if (!globalEnabled) return;
+
+    const servers = getMCPServers();
+    const enabledServers = servers.filter((s) => s.enabled);
+
+    if (enabledServers.length > 0) {
+      try {
+        await fetch("/api/mcp/init", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ servers: enabledServers }),
+        });
+      } catch (error) {
+        console.error("Failed to initialize MCP servers:", error);
+      }
+    }
+  };
+
+  // MCP 전역 토글 핸들러
+  const handleMCPToggle = async (enabled: boolean) => {
+    setMCPGlobalEnabled(enabled);
+    setMcpGlobalEnabledState(enabled);
+    
+    // 활성화 시 서버 초기화
+    if (enabled) {
+      await initializeMCPServers();
+    }
+  };
 
   // 메시지 변경 시 자동 스크롤 (부드러운 애니메이션)
   useEffect(() => {
@@ -185,8 +239,11 @@ export default function Home() {
 
     setIsLoading(true);
     setStreamingMessage("");
+    setStreamingFunctionCalls([]);
 
     try {
+      const mcpEnabled = getMCPGlobalEnabled();
+      
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -196,6 +253,7 @@ export default function Home() {
             role: m.role,
             content: m.content,
           })),
+          mcpEnabled,
         }),
       });
 
@@ -206,6 +264,7 @@ export default function Home() {
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let accumulatedText = "";
+      const collectedFunctionCalls: FunctionCall[] = [];
 
       if (reader) {
         while (true) {
@@ -218,10 +277,26 @@ export default function Home() {
           for (const line of lines) {
             if (line.startsWith("data: ")) {
               const data = JSON.parse(line.slice(6));
+              
+              // 텍스트 스트리밍
               if (data.text) {
                 accumulatedText += data.text;
                 setStreamingMessage(accumulatedText);
               }
+              
+              // 함수 호출 처리
+              if (data.functionCall) {
+                const functionCall: FunctionCall = {
+                  id: `fc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                  toolName: data.functionCall.name,
+                  input: data.functionCall.args,
+                  status: "success",
+                  timestamp: Date.now(),
+                };
+                collectedFunctionCalls.push(functionCall);
+                setStreamingFunctionCalls([...collectedFunctionCalls]);
+              }
+              
               if (data.done) {
                 const assistantMessage: Message = {
                   id: `msg_${Date.now()}_${Math.random()
@@ -230,12 +305,14 @@ export default function Home() {
                   role: "assistant",
                   content: accumulatedText,
                   timestamp: Date.now(),
+                  functionCalls: collectedFunctionCalls.length > 0 ? collectedFunctionCalls : undefined,
                 };
 
                 const finalMessages = [...updatedMessages, assistantMessage];
                 setMessages(finalMessages);
                 saveCurrentSession(finalMessages);
                 setStreamingMessage("");
+                setStreamingFunctionCalls([]);
 
                 // 첫 번째 응답인 경우 제목 자동 요약
                 if (messages.length === 0) {
@@ -278,34 +355,66 @@ export default function Home() {
               Powered by Gemini 2.0 Flash
             </p>
           </div>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2 hover:scale-105 transition-transform"
-                disabled={messages.length === 0}
-              >
-                <RotateCcw className="h-4 w-4" />
-                대화 초기화
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>대화를 초기화하시겠습니까?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  현재 대화의 모든 메시지가 삭제됩니다. 이 작업은 되돌릴 수
-                  없습니다.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>취소</AlertDialogCancel>
-                <AlertDialogAction onClick={handleClearChat}>
-                  초기화
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <div className="flex items-center gap-4">
+            {/* MCP 전역 토글 */}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/50 rounded-lg">
+              <span className="text-sm font-medium">MCP 도구</span>
+              <Switch
+                checked={mcpGlobalEnabled}
+                onCheckedChange={handleMCPToggle}
+              />
+            </div>
+            
+            <div className="flex gap-2">
+            <Dialog open={mcpDialogOpen} onOpenChange={setMcpDialogOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 hover:scale-105 transition-transform"
+                >
+                  <Settings className="h-4 w-4" />
+                  MCP 설정
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>MCP 서버 관리</DialogTitle>
+                </DialogHeader>
+                <MCPServerManager onServersChange={() => {}} />
+              </DialogContent>
+            </Dialog>
+            
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 hover:scale-105 transition-transform"
+                  disabled={messages.length === 0}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  대화 초기화
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>대화를 초기화하시겠습니까?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    현재 대화의 모든 메시지가 삭제됩니다. 이 작업은 되돌릴 수
+                    없습니다.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>취소</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleClearChat}>
+                    초기화
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            </div>
+          </div>
         </header>
 
         <ScrollArea ref={scrollAreaRef} className="flex-1 p-4">
@@ -323,7 +432,7 @@ export default function Home() {
                   </AnimatedMessage>
                 ))}
 
-                {streamingMessage && (
+                {(streamingMessage || streamingFunctionCalls.length > 0) && (
                   <div className="flex gap-3 mb-4 animate-fade-in">
                     <Avatar className="h-8 w-8 shrink-0">
                       <AvatarFallback className="bg-purple-500">
@@ -331,11 +440,25 @@ export default function Home() {
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex flex-col items-start max-w-[85%]">
-                      <div className="rounded-lg px-4 py-3 bg-muted text-foreground">
-                        <div className="text-sm typing-cursor">
-                          <MarkdownContent content={streamingMessage} />
+                      {streamingFunctionCalls.length > 0 && (
+                        <div className="w-full mb-2">
+                          {streamingFunctionCalls.map((fc) => (
+                            <div key={fc.id} className="mb-2">
+                              <div className="text-xs text-muted-foreground flex items-center gap-2">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                도구 실행: {fc.toolName}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      </div>
+                      )}
+                      {streamingMessage && (
+                        <div className="rounded-lg px-4 py-3 bg-muted text-foreground">
+                          <div className="text-sm typing-cursor">
+                            <MarkdownContent content={streamingMessage} />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

@@ -2,6 +2,7 @@ import { Message } from "@/lib/types";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bot, User } from "lucide-react";
 import { MarkdownContent } from "./markdown-content";
+import { FunctionCallCard } from "./function-call-card";
 
 interface MessageBubbleProps {
   message: Message;
@@ -29,6 +30,15 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       </Avatar>
 
       <div className={`flex flex-col ${isUser ? "items-end" : "items-start"} max-w-[85%]`}>
+        {/* 함수 호출 카드 (AI 메시지에만) */}
+        {!isUser && message.functionCalls && message.functionCalls.length > 0 && (
+          <div className="w-full mb-2">
+            {message.functionCalls.map((fc) => (
+              <FunctionCallCard key={fc.id} functionCall={fc} />
+            ))}
+          </div>
+        )}
+        
         <div
           className={`rounded-lg px-4 py-3 ${
             isUser
