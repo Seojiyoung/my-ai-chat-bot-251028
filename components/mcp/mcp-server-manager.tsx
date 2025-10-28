@@ -264,16 +264,16 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
   const handleStartEdit = (server: MCPServerConfig) => {
     setEditingServerId(server.id);
     setEditServerName(server.name);
-    const transport = (server as any).transport ? (server as any).transport : ("command" in (server as any) ? "stdio" : "sse");
+    const transport: MCPTransport = server.transport;
     setEditTransport(transport as MCPTransport);
     if (transport === "stdio") {
-      setEditServerCommand((server as any).command || "");
-      setEditServerArgs(((server as any).args || []).join(" "));
+      setEditServerCommand((server as Extract<MCPServerConfig, { transport: "stdio" }>).command || "");
+      setEditServerArgs(((server as Extract<MCPServerConfig, { transport: "stdio" }>).args || []).join(" "));
       setEditServerUrl("");
       setEditServerToken("");
     } else {
-      setEditServerUrl((server as any).url || "");
-      setEditServerToken((server as any).token || "");
+      setEditServerUrl((server as Extract<MCPServerConfig, { transport: "sse" }>).url || "");
+      setEditServerToken((server as Extract<MCPServerConfig, { transport: "sse" }>).token || "");
       setEditServerCommand("");
       setEditServerArgs("");
     }
@@ -724,11 +724,11 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
                             <PowerOff className="h-4 w-4 text-gray-400 shrink-0" />
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {((server as any).transport ? (server as any).transport : ("command" in (server as any) ? "stdio" : "sse")) === "stdio"
-                            ? `${(server as any).command} ${((server as any).args || []).join(" ")}`
-                            : `${(server as any).url}`}
-                        </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {server.transport === "stdio"
+                        ? `${(server as Extract<MCPServerConfig, { transport: "stdio" }>).command} ${((server as Extract<MCPServerConfig, { transport: "stdio" }>).args || []).join(" ")}`
+                        : `${(server as Extract<MCPServerConfig, { transport: "sse" }>).url}`}
+                    </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <Switch

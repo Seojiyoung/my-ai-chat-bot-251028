@@ -71,26 +71,24 @@ export async function connectServer(
       // stderr 캡처를 위한 배열 (stdio일 때만 의미 있음)
       const stderrLines: string[] = [];
 
-      // 레거시 호환: transport가 누락된 경우 유추
-      const transportMode = (config as any).transport
-        ? (config as any).transport
-        : ("command" in (config as any) ? "stdio" : "sse");
+      // 현재 스키마는 transport를 항상 포함
+      const transportMode = config.transport;
 
       // Transport 생성
       const transport =
         transportMode === "sse"
           ? new SSEClientTransport(
-              new URL((config as any).url),
+              new URL((config as { transport: "sse"; url: string }).url),
               ({
-                headers: (config as any).token
-                  ? { Authorization: `Bearer ${(config as any).token}` }
+                headers: (config as { transport: "sse"; token?: string }).token
+                  ? { Authorization: `Bearer ${(config as { transport: "sse"; token?: string }).token}` }
                   : undefined,
-              } as unknown as any)
+              } as unknown as Record<string, unknown>)
             )
           : new StdioClientTransport({
-              command: (config as any).command,
-              args: (config as any).args,
-              stderr: "pipe", // stderr 파이핑 활성화
+              command: (config as { transport: "stdio"; command: string }).command,
+              args: (config as { transport: "stdio"; args: string[] }).args,
+              stderr: "pipe",
             });
 
       // stdio일 때만 stderr 리스너 등록
@@ -129,7 +127,7 @@ export async function connectServer(
         client,
         transport,
         connected: true,
-        config: config as any,
+        config: config,
       };
 
       manager.clients.set(config.id, clientInfo);
