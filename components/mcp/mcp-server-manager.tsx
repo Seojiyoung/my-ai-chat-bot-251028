@@ -131,6 +131,7 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
   const [newServerArgs, setNewServerArgs] = useState("");
   const [newServerUrl, setNewServerUrl] = useState("");
   const [newServerToken, setNewServerToken] = useState("");
+  const [newServerHfToken, setNewServerHfToken] = useState("");
   
   // 서버 편집 상태
   const [editingServerId, setEditingServerId] = useState<string | null>(null);
@@ -140,9 +141,10 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
   const [editServerArgs, setEditServerArgs] = useState("");
   const [editServerUrl, setEditServerUrl] = useState("");
   const [editServerToken, setEditServerToken] = useState("");
+  const [editServerHfToken, setEditServerHfToken] = useState("");
   
   // 연결 에러 상태
-  const [connectionErrors, setConnectionErrors] = useState<Map<string, { details: string; stderr?: string; suggestion?: string; preflight?: string; targetUrl?: string }>>(new Map());
+  const [connectionErrors, setConnectionErrors] = useState<Map<string, { details: string; stderr?: string; suggestion?: string; preflight?: string; targetUrl?: string; usedHeaders?: string }>>(new Map());
   
   // 연결 중 상태
   const [connectingServers, setConnectingServers] = useState<Set<string>>(new Set());
@@ -223,6 +225,7 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
         transport: "sse",
         url: newServerUrl.trim(),
         token: newServerToken.trim() || undefined,
+        hfToken: newServerHfToken.trim() || undefined,
         enabled: false,
         createdAt: Date.now(),
       } as MCPServerConfig;
@@ -238,6 +241,7 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
     setNewServerArgs("");
     setNewServerUrl("");
     setNewServerToken("");
+    setNewServerHfToken("");
     setIsAddingServer(false);
     
     onServersChange?.();
@@ -271,9 +275,11 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
       setEditServerArgs(((server as Extract<MCPServerConfig, { transport: "stdio" }>).args || []).join(" "));
       setEditServerUrl("");
       setEditServerToken("");
+      setEditServerHfToken("");
     } else {
       setEditServerUrl((server as Extract<MCPServerConfig, { transport: "sse" }>).url || "");
       setEditServerToken((server as Extract<MCPServerConfig, { transport: "sse" }>).token || "");
+      setEditServerHfToken((server as Extract<MCPServerConfig, { transport: "sse" }>).hfToken || "");
       setEditServerCommand("");
       setEditServerArgs("");
     }
@@ -287,6 +293,7 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
     setEditServerArgs("");
     setEditServerUrl("");
     setEditServerToken("");
+    setEditServerHfToken("");
   };
 
   const handleSaveEdit = async () => {
@@ -322,6 +329,7 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
         transport: "sse",
         url: editServerUrl.trim(),
         token: editServerToken.trim() || undefined,
+        hfToken: editServerHfToken.trim() || undefined,
       } as MCPServerConfig;
     }
 
@@ -349,6 +357,7 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
             suggestion: errorData.suggestion,
             preflight: errorData.preflight,
             targetUrl: errorData.targetUrl,
+            usedHeaders: errorData.usedHeaders ? JSON.stringify(errorData.usedHeaders) : undefined,
           });
           setConnectionErrors(errors);
         } else {
@@ -407,6 +416,7 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
             suggestion: errorData.suggestion,
             preflight: errorData.preflight,
             targetUrl: errorData.targetUrl,
+            usedHeaders: errorData.usedHeaders ? JSON.stringify(errorData.usedHeaders) : undefined,
           });
           setConnectionErrors(errors);
           // 연결 실패 시 다시 비활성화
@@ -622,6 +632,14 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
                   />
                   <p className="text-xs text-muted-foreground mt-1">공용 PC에 토큰 저장은 피하세요.</p>
                 </div>
+                <div>
+                  <Input
+                    placeholder="Hugging Face 토큰 (선택)"
+                    value={newServerHfToken}
+                    onChange={(e) => setNewServerHfToken(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">일부 서버는 HF 토큰이 별도로 필요합니다.</p>
+                </div>
               </>
             )}
             <div className="flex gap-2">
@@ -693,6 +711,12 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
                           onChange={(e) => setEditServerToken(e.target.value)}
                         />
                         <p className="text-xs text-muted-foreground">공용 PC에 토큰 저장은 피하세요.</p>
+                    <Input
+                      placeholder="Hugging Face 토큰 (선택)"
+                      value={editServerHfToken}
+                      onChange={(e) => setEditServerHfToken(e.target.value)}
+                      className="mt-2"
+                    />
                       </>
                     )}
                     <div className="flex gap-2">
@@ -816,6 +840,11 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
                               {connectionErrors.get(server.id)?.preflight}
                             </pre>
                           </details>
+                        )}
+                        {connectionErrors.get(server.id)?.usedHeaders && (
+                          <p className="mt-1 text-red-700 dark:text-red-300">
+                            사용한 헤더: <span className="font-mono break-all">{connectionErrors.get(server.id)?.usedHeaders}</span>
+                          </p>
                         )}
                         {connectionErrors.get(server.id)?.stderr && (
                           <details className="mt-2">

@@ -77,14 +77,22 @@ export async function connectServer(
       // Transport 생성
       const transport =
         transportMode === "sse"
-          ? new SSEClientTransport(
-              new URL((config as { transport: "sse"; url: string }).url),
-              ({
-                headers: (config as { transport: "sse"; token?: string }).token
-                  ? { Authorization: `Bearer ${(config as { transport: "sse"; token?: string }).token}` }
-                  : undefined,
-              } as unknown as Record<string, unknown>)
-            )
+          ? (() => {
+              const url = new URL((config as { transport: "sse"; url: string }).url);
+              const headers: Record<string, string> = {};
+              const token = (config as { transport: "sse"; token?: string }).token;
+              const hfToken = (config as { transport: "sse"; hfToken?: string }).hfToken;
+              if (token) {
+                headers["Authorization"] = `Bearer ${token}`;
+              }
+              if (hfToken) {
+                headers["X-HF-Token"] = hfToken;
+              }
+              const options = ({
+                headers: Object.keys(headers).length > 0 ? headers : undefined,
+              } as unknown) as Record<string, unknown>;
+              return new SSEClientTransport(url, options);
+            })()
           : new StdioClientTransport({
               command: (config as { transport: "stdio"; command: string }).command,
               args: (config as { transport: "stdio"; args: string[] }).args,

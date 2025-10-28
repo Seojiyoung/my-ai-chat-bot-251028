@@ -35,7 +35,7 @@ export type MCPServerConfig = (
     transport: MCPTransport;
   } & (
     | { transport: "stdio"; command: string; args: string[] }
-    | { transport: "sse"; url: string; token?: string }
+    | { transport: "sse"; url: string; token?: string; hfToken?: string }
   )
 );
 

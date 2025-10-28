@@ -160,8 +160,13 @@ export async function POST(request: NextRequest) {
         typeof (raw as { token?: unknown }).token === "string" && (raw as { token?: string }).token
           ? (raw as { token: string }).token
           : null;
+      const explicitHf =
+        typeof (raw as { hfToken?: unknown }).hfToken === "string" && (raw as { hfToken?: string }).hfToken
+          ? (raw as { hfToken: string }).hfToken
+          : null;
       const tokenFromUrl = extractTokenFromUrl(candidates[0] || String(raw.url));
       const bearer = explicitToken ?? tokenFromUrl ?? null;
+      const hf = explicitHf ?? null;
 
       let chosen: string | null = null;
       const preflightNotes: string[] = [];
@@ -173,6 +178,7 @@ export async function POST(request: NextRequest) {
             headers: {
               Accept: "text/event-stream",
               ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+              ...(hf ? { "X-HF-Token": hf } : {}),
             },
             redirect: "follow",
           });
@@ -190,7 +196,21 @@ export async function POST(request: NextRequest) {
 
       // 프리플라이트에 실패해도 마지막 후보로 연결을 시도한다
       // 프리플라이트 성공 시 선택 URL, 실패 시 원본 URL로 연결 시도
-      const sseUrl = chosen ?? candidates[0];
+      // HF 호환: 필요 시 쿼리 파라미터에 hf_token/hugging_face 추가(이미 있으면 유지)
+      const appendHfQuery = (baseUrl: string, token: string | null): string => {
+        if (!token) return baseUrl;
+        try {
+          const u = new URL(baseUrl);
+          if (!u.searchParams.get("hf_token") && !u.searchParams.get("hugging_face")) {
+            u.searchParams.set("hf_token", token);
+          }
+          return u.toString();
+        } catch {
+          return baseUrl;
+        }
+      };
+
+      const sseUrl = appendHfQuery(chosen ?? candidates[0], hf);
       preflightNotesLocal = preflightNotes;
       targetSseUrl = sseUrl;
 
@@ -202,6 +222,7 @@ export async function POST(request: NextRequest) {
         transport: "sse",
         url: sseUrl,
         token: bearer || undefined,
+        hfToken: hf || undefined,
       };
 
       // 프리플라이트 실패 정보를 에러 응답에 포함시키기 위해 details에 첨부
@@ -239,6 +260,10 @@ export async function POST(request: NextRequest) {
         suggestion: errorWithDetails.details?.suggestion,
         preflight: Array.isArray(maybeNotes) ? maybeNotes.join(" | ") : undefined,
         targetUrl: targetSseUrl,
+        usedHeaders: {
+          authorization: Boolean((raw as { token?: unknown }).token || extractTokenFromUrl(String((raw as { url: string }).url))),
+          xHfToken: Boolean((raw as { hfToken?: unknown }).hfToken),
+        },
       },
       { status: 500 }
     );
