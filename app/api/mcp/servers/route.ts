@@ -2,17 +2,44 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectServer, disconnectServer, getConnectedClients } from "@/lib/mcp/manager";
 import { MCPServerConfig, MCPTransport } from "@/lib/types";
 
-// SSE URL 정규화: 경로가 비었거나 '/'이면 '/sse'를 붙인다
-function normalizeSseUrl(rawUrl: string): string {
+// SSE URL 후보 생성: 원본과 '/sse' 부착 버전을 모두 반환 (중복 제거)
+function makeSseCandidates(rawUrl: string): string[] {
   try {
     const url = new URL(rawUrl);
-    if (!url.pathname || url.pathname === "/") {
-      url.pathname = "/sse";
+    const candidates: string[] = [];
+    candidates.push(url.toString());
+
+    const withSse = new URL(url.toString());
+    let pathname = withSse.pathname || "/";
+    if (!pathname.endsWith("/sse")) {
+      if (pathname.endsWith("/")) {
+        pathname += "sse";
+      } else {
+        pathname += "/sse";
+      }
+      withSse.pathname = pathname;
+      candidates.push(withSse.toString());
     }
-    return url.toString();
+
+    return Array.from(new Set(candidates));
   } catch (_) {
-    // URL 파싱 실패 시 원본 반환 (클라이언트/문서 힌트로 유도)
-    return rawUrl;
+    // 파싱 실패 시 단순 추정치 반환
+    const base = String(rawUrl);
+    const withSse = base.endsWith("/sse") ? base : `${base.replace(/\/$/, "")}/sse`;
+    return Array.from(new Set([base, withSse]));
+  }
+}
+
+function extractTokenFromUrl(urlStr: string): string | null {
+  try {
+    const url = new URL(urlStr);
+    return (
+      url.searchParams.get("token") ||
+      url.searchParams.get("api_key") ||
+      null
+    );
+  } catch (_) {
+    return null;
   }
 }
 
@@ -108,41 +135,42 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // SSE URL 정규화 및 사전 점검
-      const normalizedUrl = normalizeSseUrl(String(raw.url));
-      try {
-        const res = await fetch(normalizedUrl, {
-          method: "GET",
-          headers: {
-            Accept: "text/event-stream",
-            ...(typeof raw.token === "string" && raw.token
-              ? { Authorization: `Bearer ${raw.token}` }
-              : {}),
-          },
-          redirect: "follow",
-        });
+      // 프리플라이트: 여러 후보 URL을 시도하고, 토큰은 헤더/쿼리 모두 고려
+      const candidates = makeSseCandidates(String(raw.url));
+      const explicitToken =
+        typeof (raw as { token?: unknown }).token === "string" && (raw as { token?: string }).token
+          ? (raw as { token: string }).token
+          : null;
+      const tokenFromUrl = extractTokenFromUrl(candidates[0] || String(raw.url));
+      const bearer = explicitToken ?? tokenFromUrl ?? null;
 
-        const contentType = res.headers.get("content-type") || "";
-        if (!res.ok || !contentType.includes("text/event-stream")) {
-          return NextResponse.json(
-            {
-              error: "Invalid SSE endpoint",
-              details: `SSE 엔드포인트 또는 Content-Type이 올바르지 않습니다 (status ${res.status}).`,
-              suggestion: "URL에 /sse 경로를 붙이고 서버 문서의 SSE 경로를 확인하세요.",
+      let chosen: string | null = null;
+      const preflightNotes: string[] = [];
+
+      for (const u of candidates) {
+        try {
+          const res = await fetch(u, {
+            method: "GET",
+            headers: {
+              Accept: "text/event-stream",
+              ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
             },
-            { status: 400 }
-          );
+            redirect: "follow",
+          });
+          const contentType = res.headers.get("content-type") || "";
+          if (res.ok && contentType.includes("text/event-stream")) {
+            chosen = u;
+            break;
+          } else {
+            preflightNotes.push(`status=${res.status} ct=${contentType} url=${u}`);
+          }
+        } catch (e) {
+          preflightNotes.push(`error=${String(e)} url=${u}`);
         }
-      } catch (e) {
-        return NextResponse.json(
-          {
-            error: "Failed to reach SSE endpoint",
-            details: String(e),
-            suggestion: "방화벽/네트워크 및 URL(스킴/호스트/경로)을 확인하세요. 필요 시 /sse 경로를 사용해보세요.",
-          },
-          { status: 400 }
-        );
       }
+
+      // 프리플라이트에 실패해도 마지막 후보로 연결을 시도한다
+      const sseUrl = chosen ?? candidates[candidates.length - 1];
 
       config = {
         id: base.id,
@@ -150,9 +178,13 @@ export async function POST(request: NextRequest) {
         enabled: Boolean(base.enabled),
         createdAt: typeof base.createdAt === "number" ? base.createdAt : Date.now(),
         transport: "sse",
-        url: normalizedUrl,
-        token: typeof raw.token === "string" ? raw.token : undefined,
+        url: sseUrl,
+        token: bearer || undefined,
       };
+
+      // 프리플라이트 실패 정보를 에러 응답에 포함시키기 위해 details에 첨부
+      // (connectServer가 실패할 경우 아래 catch에서 사용)
+      (config as unknown as { __preflightNotes?: string[] }).__preflightNotes = preflightNotes;
     }
 
     // 연결 시도
@@ -174,6 +206,10 @@ export async function POST(request: NextRequest) {
     const errorWithDetails = error as Error & {
       details?: { message?: string; stderr?: string; suggestion?: string };
     };
+    // 프리플라이트 노트가 있으면 포함
+    const maybeNotes = (error as unknown as { config?: { __preflightNotes?: string[] } })?.config?.__preflightNotes
+      || (error as unknown as { __preflightNotes?: string[] }).__preflightNotes
+      || [];
     
     return NextResponse.json(
       {
@@ -181,6 +217,7 @@ export async function POST(request: NextRequest) {
         details: errorWithDetails.details?.message || errorWithDetails.message || String(error),
         stderr: errorWithDetails.details?.stderr,
         suggestion: errorWithDetails.details?.suggestion,
+        preflight: Array.isArray(maybeNotes) ? maybeNotes.join(" | ") : undefined,
       },
       { status: 500 }
     );

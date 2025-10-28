@@ -712,9 +712,9 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
                     </div>
                   </div>
                 ) : (
-                  // 일반 모드
-                  <div>
-                    <div className="flex items-start justify-between gap-3">
+                    // 일반 모드
+                    <div>
+                    <div className="flex items-start justify-between gap-3 overflow-hidden">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <h4 className="font-medium truncate">{server.name}</h4>
@@ -724,7 +724,11 @@ export function MCPServerManager({ onServersChange }: MCPServerManagerProps) {
                             <PowerOff className="h-4 w-4 text-gray-400 shrink-0" />
                           )}
                         </div>
-                    <p className="text-xs text-muted-foreground truncate">
+                    <p className="text-xs text-muted-foreground truncate" title={
+                      server.transport === "stdio"
+                        ? `${(server as Extract<MCPServerConfig, { transport: "stdio" }>).command} ${((server as Extract<MCPServerConfig, { transport: "stdio" }>).args || []).join(" ")}`
+                        : `${(server as Extract<MCPServerConfig, { transport: "sse" }>).url}`
+                    }>
                       {server.transport === "stdio"
                         ? `${(server as Extract<MCPServerConfig, { transport: "stdio" }>).command} ${((server as Extract<MCPServerConfig, { transport: "stdio" }>).args || []).join(" ")}`
                         : `${(server as Extract<MCPServerConfig, { transport: "sse" }>).url}`}
