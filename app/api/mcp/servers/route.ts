@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectServer, disconnectServer, getConnectedClients } from "@/lib/mcp/manager";
 import { MCPServerConfig, MCPTransport } from "@/lib/types";
 
+// SSE URL 정규화: 경로가 비었거나 '/'이면 '/sse'를 붙인다
+function normalizeSseUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    if (!url.pathname || url.pathname === "/") {
+      url.pathname = "/sse";
+    }
+    return url.toString();
+  } catch (_) {
+    // URL 파싱 실패 시 원본 반환 (클라이언트/문서 힌트로 유도)
+    return rawUrl;
+  }
+}
+
 /**
  * GET: MCP 서버 목록 조회
  */
@@ -93,13 +107,50 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+
+      // SSE URL 정규화 및 사전 점검
+      const normalizedUrl = normalizeSseUrl(String(raw.url));
+      try {
+        const res = await fetch(normalizedUrl, {
+          method: "GET",
+          headers: {
+            Accept: "text/event-stream",
+            ...(typeof raw.token === "string" && raw.token
+              ? { Authorization: `Bearer ${raw.token}` }
+              : {}),
+          },
+          redirect: "follow",
+        });
+
+        const contentType = res.headers.get("content-type") || "";
+        if (!res.ok || !contentType.includes("text/event-stream")) {
+          return NextResponse.json(
+            {
+              error: "Invalid SSE endpoint",
+              details: `SSE 엔드포인트 또는 Content-Type이 올바르지 않습니다 (status ${res.status}).`,
+              suggestion: "URL에 /sse 경로를 붙이고 서버 문서의 SSE 경로를 확인하세요.",
+            },
+            { status: 400 }
+          );
+        }
+      } catch (e) {
+        return NextResponse.json(
+          {
+            error: "Failed to reach SSE endpoint",
+            details: String(e),
+            suggestion: "방화벽/네트워크 및 URL(스킴/호스트/경로)을 확인하세요. 필요 시 /sse 경로를 사용해보세요.",
+          },
+          { status: 400 }
+        );
+      }
+
       config = {
         id: base.id,
         name: base.name,
         enabled: Boolean(base.enabled),
         createdAt: typeof base.createdAt === "number" ? base.createdAt : Date.now(),
         transport: "sse",
-        url: raw.url,
+        url: normalizedUrl,
         token: typeof raw.token === "string" ? raw.token : undefined,
       };
     }
