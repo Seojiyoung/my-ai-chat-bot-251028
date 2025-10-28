@@ -21,11 +21,27 @@ function makeSseCandidates(rawUrl: string): string[] {
       candidates.push(withSse.toString());
     }
 
+    // 특수 케이스: '/mcp'가 마지막 세그먼트인 경우, 형제 경로 '/sse'도 시도
+    const parts = (url.pathname || "/").split("/").filter(Boolean);
+    if (parts.length > 0 && parts[parts.length - 1] === "mcp") {
+      const sibling = new URL(url.toString());
+      const siblingParts = parts.slice(0, -1).concat("sse");
+      sibling.pathname = "/" + siblingParts.join("/");
+      candidates.push(sibling.toString());
+
+      // 일부 호스트는 '/events'를 사용
+      const events = new URL(url.toString());
+      events.pathname = "/" + parts.slice(0, -1).concat("events").join("/");
+      candidates.push(events.toString());
+    }
+
     return Array.from(new Set(candidates));
   } catch (_) {
     // 파싱 실패 시 단순 추정치 반환
     const base = String(rawUrl);
     const withSse = base.endsWith("/sse") ? base : `${base.replace(/\/$/, "")}/sse`;
+    // 형제 sse 경로도 추정 (마지막 '/mcp'를 '/sse'로 치환)
+    const sibling = base.replace(/\/?mcp(\/?$)/, "/sse$1");
     return Array.from(new Set([base, withSse]));
   }
 }
@@ -173,7 +189,8 @@ export async function POST(request: NextRequest) {
       }
 
       // 프리플라이트에 실패해도 마지막 후보로 연결을 시도한다
-      const sseUrl = chosen ?? candidates[candidates.length - 1];
+      // 프리플라이트 성공 시 선택 URL, 실패 시 원본 URL로 연결 시도
+      const sseUrl = chosen ?? candidates[0];
       preflightNotesLocal = preflightNotes;
       targetSseUrl = sseUrl;
 
