@@ -40,7 +40,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { MarkdownContent } from "@/components/chat/markdown-content";
 import { MCPServerManager } from "@/components/mcp/mcp-server-manager";
-import { Bot, Loader2, RotateCcw, Settings } from "lucide-react";
+import { Loader2, RotateCcw, Settings } from "lucide-react";
 
 export default function Home() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);

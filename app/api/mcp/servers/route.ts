@@ -66,14 +66,16 @@ export async function POST(request: NextRequest) {
     console.error("Failed to connect MCP server:", error);
     
     // 상세 에러 정보 추출
-    const errorDetails = (error as any).details;
+    const errorWithDetails = error as Error & {
+      details?: { message?: string; stderr?: string; suggestion?: string };
+    };
     
     return NextResponse.json(
       {
         error: "Failed to connect MCP server",
-        details: errorDetails?.message || (error as Error).message || String(error),
-        stderr: errorDetails?.stderr,
-        suggestion: errorDetails?.suggestion,
+        details: errorWithDetails.details?.message || errorWithDetails.message || String(error),
+        stderr: errorWithDetails.details?.stderr,
+        suggestion: errorWithDetails.details?.suggestion,
       },
       { status: 500 }
     );

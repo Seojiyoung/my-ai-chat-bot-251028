@@ -78,8 +78,12 @@ export async function connectServer(
       });
 
       // stderr 리스너 등록 (transport에 process가 있는 경우)
-      if (transport.process && transport.process.stderr) {
-        transport.process.stderr.on("data", (data: Buffer) => {
+      // 타입 정의에 없지만 런타임에 존재할 수 있는 속성이므로 타입 단언 사용
+      const transportWithProcess = transport as unknown as {
+        process?: { stderr?: { on: (event: string, handler: (data: Buffer) => void) => void } };
+      };
+      if (transportWithProcess.process?.stderr) {
+        transportWithProcess.process.stderr.on("data", (data: Buffer) => {
           const text = data.toString();
           stderrLines.push(text);
           console.error(`[MCP ${config.name} stderr]:`, text);
@@ -120,7 +124,8 @@ export async function connectServer(
       return clientInfo;
     } catch (error) {
       lastError = error as Error;
-      stderrOutput = (error as any).stderr || stderrOutput;
+      const errorWithStderr = error as { stderr?: string };
+      stderrOutput = errorWithStderr.stderr || stderrOutput;
 
       console.error(
         `[MCP ${config.name}] Connection attempt ${attempt + 1}/${retries + 1} failed:`,
@@ -142,8 +147,8 @@ export async function connectServer(
     timestamp: Date.now(),
   };
 
-  const enhancedError = new Error(errorDetails.message);
-  (enhancedError as any).details = errorDetails;
+  const enhancedError = new Error(errorDetails.message) as Error & { details: MCPConnectionError };
+  enhancedError.details = errorDetails;
 
   throw enhancedError;
 }

@@ -14,7 +14,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
   const components: Components = {
     // 코드 블록
     code(props) {
-      const { node, inline, className, children, ...rest } = props as {
+      const { inline, className, children, ...rest } = props as {
         node?: unknown;
         inline?: boolean;
         className?: string;
@@ -35,7 +35,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
     },
 
     // 링크 - 새 탭에서 열기
-    a({ node, children, href, ...props }) {
+    a({ children, href, ...props }) {
       const isExternal = href?.startsWith("http");
       return (
         <a
@@ -52,28 +52,28 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
     },
 
     // 제목들
-    h1({ node, children, ...props }) {
+    h1({ children, ...props }) {
       return (
         <h1 className="text-2xl font-bold mt-6 mb-4 first:mt-0" {...props}>
           {children}
         </h1>
       );
     },
-    h2({ node, children, ...props }) {
+    h2({ children, ...props }) {
       return (
         <h2 className="text-xl font-bold mt-5 mb-3 first:mt-0" {...props}>
           {children}
         </h2>
       );
     },
-    h3({ node, children, ...props }) {
+    h3({ children, ...props }) {
       return (
         <h3 className="text-lg font-semibold mt-4 mb-2 first:mt-0" {...props}>
           {children}
         </h3>
       );
     },
-    h4({ node, children, ...props }) {
+    h4({ children, ...props }) {
       return (
         <h4 className="text-base font-semibold mt-3 mb-2 first:mt-0" {...props}>
           {children}
@@ -82,21 +82,21 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
     },
 
     // 리스트
-    ul({ node, children, ...props }) {
+    ul({ children, ...props }) {
       return (
         <ul className="list-disc list-inside my-3 space-y-1" {...props}>
           {children}
         </ul>
       );
     },
-    ol({ node, children, ...props }) {
+    ol({ children, ...props }) {
       return (
         <ol className="list-decimal list-inside my-3 space-y-1" {...props}>
           {children}
         </ol>
       );
     },
-    li({ node, children, ...props }) {
+    li({ children, ...props }) {
       return (
         <li className="ml-4" {...props}>
           {children}
@@ -105,7 +105,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
     },
 
     // 단락
-    p({ node, children, ...props }) {
+    p({ children, ...props }) {
       return (
         <p className="my-3 leading-7 first:mt-0 last:mb-0" {...props}>
           {children}
@@ -114,7 +114,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
     },
 
     // 인용구
-    blockquote({ node, children, ...props }) {
+    blockquote({ children, ...props }) {
       return (
         <blockquote
           className="border-l-4 border-muted-foreground/30 pl-4 my-4 italic text-muted-foreground"
@@ -126,7 +126,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
     },
 
     // 테이블
-    table({ node, children, ...props }) {
+    table({ children, ...props }) {
       return (
         <div className="my-4 overflow-x-auto">
           <table
@@ -138,24 +138,24 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
         </div>
       );
     },
-    thead({ node, children, ...props }) {
+    thead({ children, ...props }) {
       return (
         <thead className="bg-muted" {...props}>
           {children}
         </thead>
       );
     },
-    tbody({ node, children, ...props }) {
+    tbody({ children, ...props }) {
       return <tbody {...props}>{children}</tbody>;
     },
-    tr({ node, children, ...props }) {
+    tr({ children, ...props }) {
       return (
         <tr className="border-b border-border" {...props}>
           {children}
         </tr>
       );
     },
-    th({ node, children, ...props }) {
+    th({ children, ...props }) {
       return (
         <th
           className="px-4 py-2 text-left font-semibold border border-border"
@@ -165,7 +165,7 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
         </th>
       );
     },
-    td({ node, children, ...props }) {
+    td({ children, ...props }) {
       return (
         <td className="px-4 py-2 border border-border" {...props}>
           {children}
@@ -174,19 +174,19 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
     },
 
     // 구분선
-    hr({ node, ...props }) {
+    hr({ ...props }) {
       return <hr className="my-6 border-t border-border" {...props} />;
     },
 
     // Strong, Em
-    strong({ node, children, ...props }) {
+    strong({ children, ...props }) {
       return (
         <strong className="font-bold" {...props}>
           {children}
         </strong>
       );
     },
-    em({ node, children, ...props }) {
+    em({ children, ...props }) {
       return (
         <em className="italic" {...props}>
           {children}
